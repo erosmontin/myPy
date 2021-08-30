@@ -37,8 +37,11 @@ print(clock.getStops())
 
 
 ## im
+
 this is my image package based on [*SimpleITK*](https://simpleitk.org/) 2.0
 (because we love [*ITK*](https://itk.org/) version 5.0)
+### Imaginable
+
 ```
 from me import im
 
@@ -60,8 +63,35 @@ B.translateImageAffine([5,5,5])
 B.writeImage(outputFileName="TA.nii.gz")
 
 ```
+### Roiable
+enjoy the classical feature to measure roi's statistics
 
+```
+import im
+
+T='/data/PROJECTS/HIPSEGENTATION/hip_segmentation/input/ResizedWithZoom/numcv_4p03-1Left.nii.gz_segmentation.nii'
+# T='/data/PROJECTS/HIPSEGENTATION/hip_segmentation/output/p03roi.nii.gz'
+R='/data/PROJECTS/HIPSEGENTATION/hip_segmentation/output/p03-1roi.nii.gz'
+
+
+A=im.ROIable()
+r=im.Imaginable(inputFileName=R)
+t=im.Imaginable(inputFileName=T)
+
+r.reshapeOverImage(t)
+A.setReference(r)
+
+A.setTest(t)
+A.setReferenceThreshold(1)
+A.setTestThreshold(1)
+print(A.getJaccard())
+print(A.getDice())
+print(A.getFalseNegativeError())
+print(A.getFalsePostiveError())
+print(A.getHahusdorf())
+A.testImages('/data/')
+```
 ## References
 If you enjoyed this package consider citing one of my article in your papers. Here is the link to my [*publications*](http://me.biodimensional.com)
 
-**46&2 just ahead of me!**
+**46&2 are just ahead of me!**

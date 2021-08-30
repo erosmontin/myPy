@@ -1,5 +1,5 @@
 import im
-
+import numpy as np
 IM='/data/PROJECTS/HIPSEGENTATION/hip_segmentation/input/p03.nii.gz'
 
 A=im.Imaginable(inputFileName=IM)
@@ -28,5 +28,11 @@ newOrigin=B.getCoordinatesFromIndex([20, 20, 0]),
 newSpacing=[0.4, 0.4, 1])
 A.writeImage(outputFileName='Zoom.nii.gz')
 
+A=im.Imaginable()
+P=np.random.rand(20,30,50)
+A.setImageArray(P)
+print(A.getImageSize())
+A.setOutputFileName('/data/ppp.nii.gz')
+A.writeImage()
 
 

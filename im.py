@@ -4,6 +4,8 @@ import SimpleITK as sitk
 from SimpleITK.SimpleITK import ThresholdSegmentationLevelSetImageFilter
 import numpy as np
 import pylab
+import nibabel as nib
+
 class IndexTracker(object):
         def __init__(self, ax, X):
             self.ax = ax
@@ -107,7 +109,33 @@ class Imaginable():
 
     def setImage(self,im):
         self.Image = im
+    
+    def getImageArray(self):
+        image=self.getImage()
+        return sitk.GetArrayFromImage(image)
         
+    def setImageFromNibabel(self,filename):
+        img = nib.load(filename)
+        data = img.get_fdata()
+        self.setImageArray(data)
+
+
+
+
+    def setImageArray(self,array):
+        #input is a nd array #         nda = sitk.GetArrayFromImage(image) or image.getImageArray()
+        image=self.getImage()
+        if image is None:
+            array=adjustNumpyArrayForITK(array)
+            self.setImage(sitk.GetImageFromArray(array, isVector=False))
+            print('no Information on Image')
+        else:
+            nda = sitk.GetImageFromArray(array)
+            nda.CopyInformation(image)
+            nda.SetSpacing(self.getImageSpacing())
+            nda.SetOrigin(self.getImageOrigin())
+            nda.SetDirection(self.getImageDirections())
+            self.setImage(nda)
 
     def readImage(self):
         self.setImage(sitk.ReadImage(self.getInputFileName()))
@@ -413,5 +441,14 @@ def regridSitkImage(image, newSize, transform , interpolator, newOrigin, newSpac
 
         
         
+def adjustNumpyArrayForITK(array):
+    # ITK's Image class does not have a bracket operator. It has a GetPixel which takes an ITK Index object as an argument, which is an array ordered as (x,y,z). This is the convention that SimpleITK's Image class uses for the GetPixel method as well. While in numpy, an array is indexed in the opposite order (z,y,x).
 
-    
+    if(len(array.shape)==3):
+        return np.swapaxes(array,0,2)
+    elif(len(array.shape)==2):
+        return np.swapaxes(array,0,1)
+    else:
+        print("numpy shap enot yet seen!! in adjustNumpyArrayForITK")
+        return None
+        
