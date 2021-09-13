@@ -1,6 +1,8 @@
 import os
 import json
 import uuid
+import glob
+
 
 def splitext_(path):
     if len(path.split('.')) > 1:
@@ -81,12 +83,35 @@ class Pathable:
             return os.path.join(P, N + suffix + '.' + E)
         else:
             return os.path.join(P, N + suffix)
-    def getRandomPostionName(self):
-        E = self.getExtension()
+    
+    def reNameFile(self,newName='notset',E='notset'):
+        if E =='notset':
+            E = self.getExtension()
+        
+        if newName =='notset':
+            newName = self.getFilename()
+
         PT=self.getPath()
         if E is None:
-            return os.path.join(PT,str(uuid.uuid4()))
-        return os.path.join(PT,str(uuid.uuid4()) +'.'+ E)
+            return os.path.join(PT,newName)
+        return os.path.join(PT,newName +'.'+ E)
+    
+    
+
+    def getRandomPostionName(self):
+        return self.reNameFile(str(uuid.uuid4()))
+
+    def getNewPositionName(self,newName):
+        return self.reNameFile(newName)
+    
+    # def getNewPositionName(self,newName):
+    #     return self.reNameFile(newName)
+    
+    def getNewPositionExtension(self,ext):
+        return self.reNameFile(E=ext)
+    
+    def getStringForSearchingingInDirectoryallFilesWithExtension(self):
+        return self.getNewPositionName('*')
         
 
     def readJsonFile(self):
@@ -119,6 +144,22 @@ class Pathable:
     
     def getPostionNameWithPrefix(self,prefix):
         return self.getFullfileNameWIthPrefix(prefix)
+    
+    def getFilesInPositionByExtension(self,ext=None,sort=True):
+        if ext is None:
+            A = self.getStringForSearchingingInDirectoryallFilesWithExtension()
+        else:
+            A = self.reNameFile('*',E=ext)
+
+        if sort:
+            return sorted(glob.glob(A))
+        else:
+            return glob.glob(A)
+    
+    def printFilesInPositionByExtension(self,ext=None,sort=True):
+
+        for t in self.getFilesInPositionByExtension(ext=ext,sort=sort):
+            print (t)
 
     
 

@@ -42,11 +42,17 @@ class IndexTracker(object):
 
 class Imaginable():
     def __init__(self,**kwargs ):
+        #inputFileName=lslsll.nii.gz
         self.InputFileName = None
         self.OutputFileName = None
         self.Image = None
         if kwargs is None:
             print("start")
+        elif len(kwargs)==1:
+            v=kwargs.values()
+            vi=iter(v)
+            self.setInputFileName(next(vi))
+            
         else:
             if 'inputFileName' in kwargs:
                 self.setInputFileName(kwargs['inputFileName'])
@@ -120,7 +126,8 @@ class Imaginable():
         self.setImageArray(data)
 
 
-
+    def __del__(self):
+        print("I'm being automatically destroyed. Goodbye!")
 
     def setImageArray(self,array):
         #input is a nd array #         nda = sitk.GetArrayFromImage(image) or image.getImageArray()
@@ -136,10 +143,17 @@ class Imaginable():
             nda.SetOrigin(self.getImageOrigin())
             nda.SetDirection(self.getImageDirections())
             self.setImage(nda)
+    def setImageInformationFromExternalImage(self,externalImage):
+        image=self.getImage()
+        image.SetSpacing(externalImage.getImageSpacing())
+        image.SetOrigin(externalImage.getImageOrigin())
+        image.SetDirection(externalImage.getImageDirections())
+        self.setImage(image)
 
     def readImage(self):
         self.setImage(sitk.ReadImage(self.getInputFileName()))
-
+    def writeImageAs(self,filename):
+        self.writeImage(outputFileName=filename)
     def writeImage(self,**kwargs):
         if kwargs is not None:
             if 'outputFileName' in kwargs:

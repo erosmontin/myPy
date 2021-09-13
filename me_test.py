@@ -9,6 +9,10 @@ A=me.Pathable(thestring)
 L=A.getFullfileNameWIthPrefix('test__')
 print(L)
 
+print(A.getStringForSearchingingInDirectoryallFilesWithExtension())
+
+print(A.getNewPositionExtension('altro'))
+
 L=A.getFullfileNameWIthSuffix('__test')
 print(L)
 
@@ -85,8 +89,14 @@ print(A.getPostionNameWithPrefix('prova__'))
 print(A.getPostionNameWithSuffix('__prova'))
 
 
+print(A.getPostionNameWithPrefix('prova/'))
+
 
 print(clock.stop())
+
+A.printFilesInPositionByExtension()
+
+A.printFilesInPositionByExtension('nii')
 
 
 print(clock.avg())
