@@ -47,6 +47,9 @@ class Pathable:
             return self.isDir()
         return self.isFile()
 
+    def getPosition(self):
+        return self.position
+
     def getPath(self):
         file_name, extension = splitext_(self.position)
         return os.path.dirname(file_name)
@@ -73,6 +76,10 @@ class Pathable:
         N = self.getBaseName()
         P = self.getPath()
         return os.path.join(P, prefix + N)
+
+    def changePath(self,path):
+        basename=self.getBaseName()
+        self.position=os.join(path,basename)
 
     def getFullfileNameWIthSuffix(self, suffix):
         P = self.getPath()
@@ -160,6 +167,10 @@ class Pathable:
 
         for t in self.getFilesInPositionByExtension(ext=ext,sort=sort):
             print (t)
+    def createPathablePath(self):
+        directory=self.getPath()
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
     
 

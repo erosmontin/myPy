@@ -40,6 +40,45 @@ class IndexTracker(object):
                print('you pressed', event.button, event.xdata, event.ydata)
                print('value %s' % self.X[int(np.floor(event.ydata)),int(np.floor(event.xdata)),self.ind])
 
+
+""" @brief creates a simpleitk random image
+
+    @param imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[[1.0,0.0,0.0],[0,1.0.0,0.0],[0.0,0.0,1.0]]
+"""
+
+def createSITKImagefromNumpyArray(nda, imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+    img = sitk.GetImageFromArray(adjustNumpyArrayForITK(nda))
+    img.SetDirection(imageDirection)
+    img.SetOrigin(imageOrigin)
+    img.SetSpacing(imageResolution)
+    return img
+
+def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+    nda=np.random.random(imageSize)
+    return createSITKImagefromNumpyArray(nda,imageResolution,imageOrigin,imageDirection)
+
+def createLabelMapSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],values=[0,1]):
+    nda = np.random.choice(values, size=imageSize)
+    nda=np.uint8(nda)
+    return createSITKImagefromNumpyArray(nda,imageResolution,imageOrigin,imageDirection)
+
+""" @brief creates an imaginable random image
+    @param imageSize=[20,20,20],imageResolution=[1.0,1.0,1],imageOrigin=[0.0,0.0,0.0],imageDirection=[[1.0.0,0.0,0.0],[0.0,1.0.0,0.0],[0.0,0.0,1.0]]
+"""
+def createImaginableFormSITKImage(sitk,imageName='randomImaginable.nii.gz'):
+    A=Imaginable()
+    A.setImage(sitk)
+    A.setOutputFileName(imageName)
+    return A
+
+def createRandomImaginable(imageName='randomImaginable.nii.gz',imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+    sitk=createRandomSITKImage(imageSize,imageResolution,imageOrigin,imageDirection)
+    return createImaginableFormSITKImage(sitk,imageName)
+
+def createRandomLabelmapImaginable(imageName='randomImaginable.nii.gz',imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],values=[0,1]):
+    sitk=createLabelMapSITKImage(imageSize,imageResolution,imageOrigin,imageDirection,values)
+    return createImaginableFormSITKImage(sitk,imageName)
+
 class Imaginable():
     def __init__(self,**kwargs ):
         #inputFileName=lslsll.nii.gz
