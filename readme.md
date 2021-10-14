@@ -1,8 +1,9 @@
 # My Python Packages
 Utils for an easy coding life from Dr. [*Eros Montin, PhD*](http://me.biodimensional.com).
 
-### me
-don't need the environement me to be activated
+## me
+
+
 ### Pathable
 Everything you need to work with path
 
@@ -92,6 +93,6 @@ print(A.getHahusdorf())
 A.testImages('/data/')
 ```
 ## References
-If you enjoyed this package consider citing one of my article in your papers. Here is the link to my [*publications*](http://me.biodimensional.com)
+If you enjoyed this package consider citing one of my articles in your papers. Here is the link to my [*publications*](http://me.biodimensional.com)
 
 **46&2 are just ahead of me!**
