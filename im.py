@@ -1,10 +1,16 @@
 # this needs the me environment
-import os 
+import os
+from typing_extensions import Self 
 import SimpleITK as sitk
 from SimpleITK.SimpleITK import ThresholdSegmentationLevelSetImageFilter
 import numpy as np
 import pylab
 import nibabel as nib
+import sys
+import itertools
+
+from sklearn.feature_extraction import image
+
 
 class IndexTracker(object):
         def __init__(self, ax, X):
@@ -53,8 +59,24 @@ def createSITKImagefromNumpyArray(nda, imageResolution=[1.0,1.0,1.0],imageOrigin
     img.SetSpacing(imageResolution)
     return img
 
-def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
-    nda=np.random.random(imageSize)
+
+def getSITKImageGeometryInfo(sitkim):
+    return  sitkim.GetSize(), sitkim.GetSpacing(), sitkim.GetOrigin(), sitkim.GetDirection()
+def createRandomSITKImageFromSITKImage(sitkim,mean=1):
+    size, res, origin,directions =getSITKImageGeometryInfo(sitkim)
+    filter=sitk.MultiplyImageFilter()
+    return filter(createRandomSITKImage(size,res,origin,directions,True),mean)
+
+def createUniformRandomSITKImageFromSITKImage(sitkim,min,max):
+    size, res, origin,directions =getSITKImageGeometryInfo(sitkim)
+    return createRandomSITKImage(size,res,origin,directions,False,min,max)
+
+def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],random=True,low=0.0,high=1.0):
+    if random:
+        nda=np.random.random(imageSize)
+    else:
+        nda=np.random.uniform(low=low, high=high, size=imageSize)
+
     return createSITKImagefromNumpyArray(nda,imageResolution,imageOrigin,imageDirection)
 
 def createLabelMapSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],values=[0,1]):
@@ -79,15 +101,19 @@ def createRandomLabelmapImaginable(imageName='randomImaginable.nii.gz',imageSize
     sitk=createLabelMapSITKImage(imageSize,imageResolution,imageOrigin,imageDirection,values)
     return createImaginableFormSITKImage(sitk,imageName)
 
+    
+
 class Imaginable():
     def __init__(self,**kwargs ):
         #inputFileName=lslsll.nii.gz
         self.InputFileName = None
         self.OutputFileName = None
         self.Image = None
+        self.verbose=False
+        
         if kwargs is None:
             print("start")
-        elif len(kwargs)==1:
+        elif len(kwargs)==1: #immaginable('filename.nii')
             v=kwargs.values()
             vi=iter(v)
             self.setInputFileName(next(vi))
@@ -97,7 +123,11 @@ class Imaginable():
                 self.setInputFileName(kwargs['inputFileName'])
             if 'outputFileName' in kwargs:
                 self.setOutputFileName(kwargs['outputFileName'])
-                
+    def setVerbose(self,v):
+        self.verbose=v
+    def getVerbose(self):
+        return self.verbose
+
     def getInputFileName(self):
         try:
             return self.InputFileName
@@ -132,6 +162,10 @@ class Imaginable():
         image=self.getImage()
         return image.GetSpacing()
     
+    def setImageSpacing(self,spacing):
+        image=self.getImage()
+        image.SetSpacing(spacing)
+    
     def getImageOrigin(self):
         image=self.getImage()
         return image.GetOrigin()
@@ -164,15 +198,24 @@ class Imaginable():
         data = img.get_fdata()
         self.setImageArray(data)
 
+    def getDuplicate(self):
+        S=Imaginable()
+        S.setImage(self.getImage())
+        return S
 
+    def __tellme(self,m):
+        if(self.getVerbose):
+            print(m)
     def __del__(self):
-        print("I'm being automatically destroyed. Goodbye!")
-
-    def setImageArray(self,array):
+        self.__tellme("I'm being automatically destroyed. Goodbye!")
+    
+    def setImageArray(self,array,changepositions=True):
         #input is a nd array #         nda = sitk.GetArrayFromImage(image) or image.getImageArray()
         image=self.getImage()
         if image is None:
-            array=adjustNumpyArrayForITK(array)
+            if changepositions:
+                array=adjustNumpyArrayForITK(array)
+            
             self.setImage(sitk.GetImageFromArray(array, isVector=False))
             print('no Information on Image')
         else:
@@ -221,7 +264,7 @@ class Imaginable():
             return True
         return False
 
-    def resizeImage(self,newSize):
+    def resizeImage(self,newSize,interpolator=sitk.sitkLinear):
         image=self.getImage()
         dimension = image.GetDimension()
         reference_physical_size = np.zeros(image.GetDimension())
@@ -234,12 +277,46 @@ class Imaginable():
         reference_spacing = [ phys_sz/(sz-1) for sz,phys_sz in zip(newSize, reference_physical_size) ]
         centered_transform =sitk.Transform()
         
-        self.setImage(regridSitkImage(image, newSize, centered_transform,  sitk.sitkLinear, reference_origin, reference_spacing, reference_direction, 0.0,image.GetPixelIDValue()))
+        self.setImage(regridSitkImage(image, newSize, centered_transform,  interpolator, reference_origin, reference_spacing, reference_direction, 0.0,image.GetPixelIDValue()))
         return True
 
-    def cropImage(self,lower,upper):
+    def cropImage(self,lowerB,upperB):
         image=self.getImage()
-        self.setImage(sitk.Crop(image,lower,upper))
+        return self.setImage(sitk.Crop(image,lowerB,upperB))
+
+    def getImageCornersVoxel(self,image=None):
+        # image is an IMmaginable image
+        if image is None:
+            image=self.getImage()
+        max_indexes = [sz-1 for sz in image.GetSize()]
+        extreme_indexes = list(itertools.product(*(list(zip([0]*image.GetDimension(),max_indexes)))))
+        return extreme_indexes
+    # extreme_points_transformed = [euler_transform.TransformPoint(image.TransformContinuousIndexToPhysicalPoint(p)) for p in extreme_indexes]
+    
+    # output_min_coordinates = np.min(extreme_points_transformed, axis=0)
+    # output_max_coordinates = np.max(extreme_points_transformed, axis=0)
+    
+    # # isotropic ouput spacing
+    # if output_spacing is None:
+    #   output_spacing = min(image.GetSpacing())
+    # output_spacing = [output_spacing]*image.GetDimension()  
+                    
+    # output_origin = output_min_coordinates
+    # output_size = [int(((omx-omn)/ospc)+0.5)  for ospc, omn, omx in zip(output_spacing, output_min_coordinates, output_max_coordinates)]
+    
+    # output_direction = [1,0,0,0,1,0,0,0,1]
+    # output_pixeltype = image.GetPixelIDValue()
+
+    # return sitk.Resample(image, 
+    #                      output_size, 
+    #                      euler_transform.GetInverse(), 
+    #                      sitk.sitkLinear, 
+    #                      output_origin,
+    #                      output_spacing,
+    #                      output_direction,
+    #                      background_value,
+    #                      output_pixeltype) 
+
     
     def reshapeOverImage(self,targetImage,**kwargs):
         if kwargs is None:
@@ -256,8 +333,46 @@ class Imaginable():
         newDirections=targetImage.getImageDirections(),
         newSpacing=targetImage.getImageSpacing()
         )
+    
+    def resizeImageInVoxelSpace(self,sizemin,sizemax,**kwargs):
+        spacing='original'
+        newSpacing=self.getImageSpacing()
+        newSize=[]
+        [newSize.append(ma-mi) for mi,ma in zip(sizemin,sizemax)]            
+        oldSize=self.getImageSize()
+        if kwargs is None:
+            print("start")
+        else:
+            if 'interpolator' in kwargs:
+                interpolator= kwargs['interpolator']
+            else:
+                interpolator =  sitk.sitkLinear
+            if 'spacing' in kwargs:
+                spacing= kwargs['spacing']
+                if(spacing.lower()=='calculate'):
+                    oldSpacing=newSpacing
+                    newSpacing=[]
+                    [newSpacing.append(float(float(n)/float(o)*s)) for n,o,s in zip(newSize,oldSize,oldSpacing)]
+                    print(newSpacing)
+            else:
+                interpolator =  sitk.sitkLinear
+        
+        newOrigin=self.getCoordinatesFromIndex(sizemin)
+        self.reshapeImageToNewGrid(pixelValue=0,
+        intrepolator= interpolator,
+        newSize= newSize,
+        newOrigin=newOrigin,
+        newDirections=self.getImageDirections(),
+        newSpacing=newSpacing
+        )
 
+    def addImage(self, imaginableToBeAdd):
+        image=self.getImage()
+        imaginableToBeAdd.reshapeOverImage(self)
+        add=imaginableToBeAdd.getImage()
+        return self.setImage(image+add)
 
+         
         
     def reshapeImageToNewGrid(self,**kwargs):
         image=self.getImage()
@@ -275,7 +390,7 @@ class Imaginable():
             else:
                 interpolator =  sitk.sitkLinear
             if 'transform' in kwargs:
-                reansform=kwargs['transform']
+                transform=kwargs['transform']
             else:
                 transform=sitk.Transform()
             if 'newSize' in kwargs:
@@ -301,7 +416,23 @@ class Imaginable():
         self.setImage(regridSitkImage(image, newSize, transform , interpolator, newOrigin, newSpacing, newDirections, default_value,image.GetPixelIDValue()))
 
 
+    def isPointInside(self,P):
+        #works with points
+        image=self.getImage()
+        size=self.getImageSize()
+        V=self.getIndexFromCoordinates(P)
+        #pretend it's inside
+        O=True 
+
+        for a in range(len(P)):
+            if (V[a]<0 ) | (V[a]>size[a]):
+                O=False
+                break
+
+        return O
     
+        
+
     def translateImage(self,T):
         image=self.getImage()
         dimension=self.getImageDimension()
@@ -310,6 +441,12 @@ class Imaginable():
     def getCoordinatesFromIndex(self,P):
         image=self.getImage()
         return image.TransformContinuousIndexToPhysicalPoint(P)
+    def getIndexFromCoordinates(self,I):
+        image=self.getImage()
+        return image.TransformPhysicalPointToIndex(I)
+        # return image.TransformPhysicalPointToContinuousIndex(I)
+
+
 
     def getImageCenterCoordinates(self):
         return self.getCoordinatesFromIndex(np.array(self.getImageSize())/2.0)
@@ -319,27 +456,36 @@ class Imaginable():
         dimension=self.getImageDimension()
         cosines = sitk.AffineTransform(dimension)
         cosines.SetCenter(self.getImageOrigin())
+        
         return sitk.CompositeTransform([cosines,transform])
 
-    def translateImageAffine(self,T):
+    def transformImageAffine(self,transform):
+        #transform will be parsed with the cosines
+        print('no roiii')
         image=self.getImage()
+        thetransform=self.composeImageCosinesTransform(transform)
+        return transformImage(image,thetransform,interpolator=sitk.sitkLinear),thetransform
+
+    def translateImageAffine(self,T):
         dimension=self.getImageDimension()
         
         transform = sitk.AffineTransform(dimension)
         transform.SetTranslation(T)
 
         transform.SetCenter(self.getImageOrigin())
-        thetransform=self.composeImageCosinesTransform(transform)
-        self.setImage(transformImage(image,thetransform))
+        im,thetransform =self.transformImageAffine(transform)
+        self.setImage(im)
         return thetransform
 
     def scaleImageAffine(self,S,**kwargs):
-        image=self.getImage()
         dimension=self.getImageDimension()
         
         if kwargs is not None:
             if 'transformCenter' in kwargs:
-                center=kwargs['transformCenter']
+                if kwargs["transformCenter"] is None:
+                    center=self.getImageCenterCoordinates()
+                else:
+                    center=kwargs['transformCenter']
             else :
                 center = self.getImageCenterCoordinates()
    
@@ -351,10 +497,266 @@ class Imaginable():
             matrix[s,s] = S[s]
         transform.SetMatrix(matrix.ravel())
         transform.SetCenter(center)
-        thetransform=self.composeImageCosinesTransform(transform)
-
-        self.setImage(transformImage(image,thetransform))
+        im,thetransform =self.transformImageAffine(transform)
+        self.setImage(im)
         return thetransform
+        
+
+    def rotateImage3D(self, theta_x, theta_y, theta_z,transformation_center=None, output_spacing = None, background_value=0.0):
+        """
+        This function rotates an image across each of the x, y, z axes by theta_x, theta_y, and theta_z degrees
+        respectively and resamples it to be isotropic.
+        :param image: An sitk 3D image
+        :param theta_x: The amount of degrees the user wants the image rotated around the x axis
+        :param theta_y: The amount of degrees the user wants the image rotated around the y axis
+        :param theta_z: The amount of degrees the user wants the image rotated around the z axis
+        :param output_spacing: Scalar denoting the isotropic output image spacing. If None, then use the smallest
+                            spacing from original image.
+        :return: The rotated image
+        """
+        image =self.getImage()
+        if transformation_center is None:
+            transformation_center=self.getImageCenterCoordinates()
+
+        euler_transform = sitk.Euler3DTransform (transformation_center, 
+                                                np.deg2rad(theta_x), 
+                                                np.deg2rad(theta_y), 
+                                                np.deg2rad(theta_z))
+        
+        im,thetransform =self.transformImageAffine(euler_transform)
+        self.setImage(im)
+        return thetransform
+    def multiply(self,v,image=None):
+        
+        if image is None:
+            image=self.getImage()
+        
+        filter = sitk.MultiplyImageFilter()
+        
+        return sitk.Cast(filter.Execute(image,float(v)),image.GetPixelIDValue())
+        
+    def multiplyAndSet(self,v,image=None):
+        if image is None:
+            image=self.getImage()
+
+        m= self.multiply(self,v,image)
+        self.setImage(m)
+        return m
+    def addAndSet(self,image2,image=None):
+        if image is None:
+            image=self.getImage()
+            
+        m= self.add(image2,image)
+        self.setImage(m)
+        return m
+    
+    def add(self,image2,image=None):
+        
+        if image is None:
+            image=self.getImage()
+        
+        filter = sitk.AddImageFilter()
+        
+        return self.cast(image.GetPixelIDValue(),filter.Execute(self.cast(sitk.sitkFloat64,image),self.cast(sitk.sitkFloat64,image2)))
+    
+    def cast(self,type,image=None):
+        if image is None:
+            image=self.getImage()
+
+        return sitk.Cast(image,type)
+
+
+    def getValuesInImageUnique(self,image=None):
+        if image is None:
+            image=self.getImage()
+    
+        return np.unique(self.getImageArray().flatten())
+
+    def getMaximumValue(self,image=None):
+        if image is None:
+            image=self.getImage()
+        filter = sitk.MinimumMaximumImageFilter()
+        filter.Execute(image)
+        return filter.GetMaximum()
+
+    def getMinimumValue(self,image=None):
+        if image is None:
+            image=self.getImage()
+
+        filter = sitk.MinimumMaximumImageFilter()
+        filter.Execute(image)
+        return filter.GetMinimum()
+    
+    def getAxialSlice(self,slice,image=None):
+        if image is None:
+            image = self.getImage()
+        slice = int(slice)
+        size = list(image.GetSize())
+        size[2] = 0
+        index = [0, 0, slice]
+        out = self.__SliceExtractor(size,index,image)
+        return out
+    def getCoronalSlice(self,slice,image=None):
+        if image is None:
+            image = self.getImage()
+        slice = int(slice)
+        size = list(image.GetSize())
+        size[1] = 0
+        index = [0, slice,0]
+        out = self.__SliceExtractor(size,index,image)
+        return out
+    def getSagittalSlice(self,slice,image=None):
+        if image is None:
+            image = self.getImage()
+        slice = int(slice)
+        size = list(image.GetSize())
+        size[0] = 0
+        index = [slice,0,0]
+        out = self.__SliceExtractor(size,index,image)
+        return out
+    
+    def writeSliceAs(self,plan,index,filename,image):
+        if image is None:
+            image = self.getImage()
+        
+        if((plan==0)|(plan=='axial')):
+            slice=self.getAxialSlice(index,image)
+        elif((plan==1)|(plan=='sagittal')):
+            slice=self.getSagittalSlice(index,image)
+        elif((plan==2)|(plan=='coronal')):
+            slice=self.getCoronalSlice(index,image)
+        
+
+
+
+    def __SliceExtractor(size,index,image):
+        Extractor = sitk.ExtractImageFilter()
+        Extractor.SetSize(size)
+        Extractor.SetIndex(index)
+        return Extractor.Execute(image)
+
+    
+        
+        
+
+
+
+class Lablemappable(Imaginable):
+    def getValuesInImageUnique(self, image=None):
+        L= super().getValuesInImageUnique(image)
+        return L[L>0]
+
+
+    def dilate(self,radius=2,foregraundvalue=1,image=None):
+        return self.__derode(radius,foregraundvalue,image,False)
+    def erode(self,radius=2,foregraundvalue=1,image=None):
+        return self.__derode(radius,foregraundvalue,image,True)
+    def __derode(self,radius=2,foregraundvalue=None,image=None,erode=True):
+        
+        if image is None:
+            image=self.getImage()
+        
+        if erode:
+            filter = sitk.BinaryErodeImageFilter()
+        else:
+            filter = sitk.BinaryDilateImageFilter()
+
+        filter.SetKernelRadius ( radius )
+
+        L=self.getValuesInImageUnique(image)
+        imagetype=image.GetPixelIDValue()
+        size = self.getImageSize()
+        out = sitk.Image(size, imagetype)
+        out.CopyInformation(image)
+        for l in range(len(L)):
+            f=L[l]
+            filter.SetForegroundValue ( float(f))
+            out+=filter.Execute(self.multiply(f,self.mask(f,image)))
+
+
+        return sitk.Cast(out, image.GetPixelIDValue())
+        
+    def getMapFromLabelMap(self,value,image=None):
+        if image is None:
+            image=self.getImage()
+        return value*(image==value)
+
+    def mask(self,value,image=None):
+        if image is None:
+            image=self.getImage()
+        
+        return sitk.Cast(image==value,image.GetPixelIDValue())
+        
+    
+    def treshold(self,low=None,high=None,image=None):
+        
+        if image is None:
+            image=self.getImage()
+        
+       
+        filter = sitk.ThresholdImageFilter()
+        if low is not None:
+            filter.SetLower(float(low))
+        
+        if high is not None:
+            filter.SetUpper(float(high))
+        
+        
+        return sitk.Cast(filter.Execute ( image ), image.GetPixelIDValue())
+
+    def getDuplicate(self):
+        S=Lablemappable()
+        S.setImage(self.getImage())
+        return S
+        #override because we want to force a nearest neighbour interp
+    # def transformImageAffine(self,transform=None):
+        
+    #     thetransform=self.composeImageCosinesTransform(transform)
+    #     theim=transformImage(self.getImage(),thetransform,interpolator=sitk.sitkLabelGaussian)
+    #     return theim,thetransform
+    def transformImageAffine(self,transform=None):
+        #transform will be parsed with the cosines
+        image=self.getImage()
+        L=self.getValuesInImageUnique()
+        imagetype=image.GetPixelIDValue()
+        size = self.getImageSize()
+        output_image = sitk.Image(size, imagetype)
+        output_image.CopyInformation(image)
+        for l in range(len(L)):
+            f=L[l]
+            # output_image+=self.multiply(f,self.dilate(1,1,self.mask(f)))
+            output_image+=self.multiply(f,self.dilate(2,1,self.mask(f)))
+
+        thetransform=self.composeImageCosinesTransform(transform)
+        theim=transformImage(output_image,thetransform,interpolator=sitk.sitkLabelGaussian)
+        
+    
+
+        final_image = sitk.Image(size, imagetype)
+        final_image.CopyInformation(image)
+
+        for l in range(len(L)):
+            f=L[l]
+            final_image+=self.multiply(f,self.erode(1,1,self.mask(f,theim)))
+
+        return final_image,thetransform
+def transformImageAffine2(self,transform=None):
+        #transform will be parsed with the cosines
+        image=self.getImage()
+        thetransform=self.composeImageCosinesTransform(transform)
+        L=np.unique(self.getImageArray().flatten())
+        L=L[L>0]
+        imagetype=image.GetPixelIDValue()
+        size = self.getImageSize()
+        output_image = sitk.Image(size, imagetype)
+        output_image.CopyInformation(image)
+        for l in range(len(L)):
+            f=L[l]
+            # output_image+=self.multiply(f,self.dilate(1,1,self.mask(f)))
+            output_image+=self.multiply(f,transformImage(self.mask(f),thetransform,interpolator=sitk.sitkNearestNeighbor))
+
+        return output_image,thetransform
+
 
 class ROIable(Imaginable):
     def __init__(self):
@@ -369,16 +771,18 @@ class ROIable(Imaginable):
     def getTest(self):
         return self.Test
     def setReference(self,reference):
-        self.OverlapFiler=None
+        self.resetOverlap()
         self.Reference =reference
     def setTest(self,test):
-        self.OverlapFiler=None
+        self.resetOverlap()
         self.Test=test
     def setOverlapFilter(self,overlap):
         self.Overlap =overlap
+    def resetOverlap(self):
+        self.Overlap =None
 
     def getOverlapFilter(self):
-        ov=self.OverlapFiler
+        ov=self.Overlap
         if ov is None:
             R=self.getReference()
             T=self.getTest()
@@ -399,13 +803,13 @@ class ROIable(Imaginable):
     def getReferenceThreshold(self):
         return self.ReferenceThreshold
     def setReferenceThreshold(self,t):
-        self.OverlapFiler=None
+        self.resetOverlap()
         self.ReferenceThreshold=t
     
     def getTestThreshold(self):
         return self.TestThreshold
     def setTestThreshold(self,t):
-        self.OverlapFiler=None
+        self.resetOverlap()
         self.TestThreshold=t
 
 
@@ -459,13 +863,16 @@ class ROIable(Imaginable):
         else:
             return None
     
-    def testImages(self,pt):
+    def testImages(self,pt): 
+        #check if th images are overlapped
         r=os.path.join(pt,'r.nii.gz')
         t=os.path.join(pt,'t.nii.gz')
         R=self.getReference()
         R.writeImage(outputFileName=r)
         T=self.getTest()
         T.writeImage(outputFileName=t)
+    
+
         
 
 
@@ -505,3 +912,61 @@ def adjustNumpyArrayForITK(array):
         print("numpy shap enot yet seen!! in adjustNumpyArrayForITK")
         return None
         
+
+
+
+
+
+def dicomread(fname,dirout=None):
+    if len(sys.argv) < 1:
+        print("Usage: DicomSeriesReader <input_directory> <outputdirectory>")
+        sys.exit(1)
+
+    print("Reading Dicom directory:", fname)
+    reader = sitk.ImageSeriesReader()
+
+    dicom_names = reader.GetGDCMSeriesFileNames(fname)
+    reader.SetFileNames(dicom_names)
+    reader.MetaDataDictionaryArrayUpdateOn()
+    reader.LoadPrivateTagsOn()
+    #image = reader.Execute()
+
+    #size = image.GetSize()
+    #print("Image size:", size[0], size[1], size[2])
+
+    
+
+        # Copy relevant tags from the original meta-data dictionary (private tags are also
+        # accessible).
+    tags_to_copy = ["0010|0010", # Patient Name
+                    "0010|0020", # Patient ID
+                    "0010|0030", # Patient Birth Date
+                    "0020|000D", # Study Instance UID, for machine consumption
+                    "0020|0010", # Study ID, for human consumption
+                    "0008|0020", # Study Date
+                    "0008|0030", # Study Time
+                    "0008|0050", # Accession Number
+                    "0008|0060"  # Modality
+    ]
+
+    series_tag_values = [(k, reader.GetMetaData(0,k)) for k in tags_to_copy if reader.HasMetaDataKey(0,k)]
+                #  [("0008|0031",modification_time), # Series Time
+                #   ("0008|0021",modification_date), # Series Date
+                #   ("0008|0008","DERIVED\\SECONDARY"), # Image Type
+                #   ("0020|000e", "1.2.826.0.1.3680043.2.1125."+modification_date+".1"+modification_time), # Series Instance UID
+                #   ("0020|0037", '\\'.join(map(str, (direction[0], direction[3], direction[6],# Image Orientation (Patient)
+                #                                     direction[1],direction[4],direction[7])))),
+                #   ("0008|103e", series_reader.GetMetaData(0,"0008|103e") + " Processed-SimpleITK")] # Series Description
+
+    print(tags_to_copy)
+    # for i in range(filtered_image.GetDepth()):
+    #     image_slice = filtered_image[:,:,i]
+    #     # Tags shared by the series.
+    #     for tag, value in series_tag_values:
+    #         image_slice.SetMetaData(tag, value)
+    #     # Slice specific tags.
+    #     image_slice.SetMetaData("0008|0012", time.strftime("%Y%m%d")) # Instance Creation Date
+    #     image_slice.SetMetaData("0008|0013", time.strftime("%H%M%S")) # Instance Creation Time
+    #     image_slice.SetMetaData("0020|0032", '\\'.join(map(str,filtered_image.TransformIndexToPhysicalPoint((0,0,i))))) # Image Position (Patient)
+    #     image_slice.SetMetaData("0020,0013", str(i)) # Instance Number
+

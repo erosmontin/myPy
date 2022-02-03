@@ -1,7 +1,29 @@
+#Eros Montin eros.montin@gmail.com
 import os
 import json
 import uuid
 import glob
+import requests
+import tarfile
+
+import tarfile
+from os import listdir
+from os.path import isfile, join
+import mimetypes
+from PIL import Image
+import integv
+
+
+def unTarGz(fname):
+    tar = tarfile.open(fname, "r:gz")
+    tar.extractall()
+    tar.close()
+
+def unTar(fname):
+    tar = tarfile.open(fname, "r:")
+    tar.extractall()
+    tar.close()
+
 
 
 def splitext_(path):
@@ -29,10 +51,27 @@ def getHeadersForRequests():
     return {"Content-Type": "application/json","User-Agent": 'My User Agent 1.0','From': 'theweblogin@iam.com'}
     
 
+def downloadFileFromWeb(url, file_name):
+    # open in binary mode
+    with open(file_name, "wb") as file:
+        # get request
+        print("i am downloading " + url + " i'll save it in" + file_name)
+        response = requests.get(url,headers=getHeadersForRequests())
+        print("done downloading " + url + " i'll save it in" + file_name)
+        
+        # write to file
+        print("writing to file" + file_name)
+        file.write(response.content)
+
+
 
 class Pathable:
     """extract info from a file position"""
 
+#position '/media/montie01/FOTO/LIFESTORAGE/20211228_000305.jpg'
+#path '/media/montie01/FOTO/LIFESTORAGE/'
+# filename '/media/montie01/FOTO/LIFESTORAGE/20211228_000305'
+# basename '20211228_000305.jpg'
     def __init__(self, position):
         self.position = position
         # self.basename=self.getBaseName(self.position)
@@ -56,6 +95,11 @@ class Pathable:
 
     def getBaseName(self):
         return os.path.basename(self.position)
+    
+    def getBaseNameWithoutExtension(self):
+        
+        l=splitext_(os.path.basename(self.position))
+        return l[0]
 
     def getExtension(self):
         file_name, extension = splitext_(self.position)
@@ -79,16 +123,39 @@ class Pathable:
 
     def changePath(self,path):
         basename=self.getBaseName()
-        self.position=os.join(path,basename)
+        self.position=os.path.join(path,basename)
+        return self.getPosition()
 
-    def getFullfileNameWIthSuffix(self, suffix):
+    def changeBasename(self,name):
+        pt=self.getPath()
+        self.position=os.path.join(pt,name)
+        return self.getPosition()
+    def changeFilename(self,bn):
+        O=bn +'.' + self.getExtension()
+        return self.changeBasename(O)
+    
+    def addSuffix(self,suf):
+        self.position=self.getPostionNameWithSuffix(suf)
+        return self.position
+
+    def addPrefix(self,pre):
+        self.position=self.getPostionNameWithPrefix(pre)
+        return self.position
+
+
+    def getFullfileNameWIthSuffix(self, suffix,rename=False):
         P = self.getPath()
         N = self.getBaseName()
         E = self.getExtension()
         if E is not None:
             N = N.replace('.' + E, '')
+            if rename:
+                self.position=os.path.join(P, N + suffix + '.' + E)
             return os.path.join(P, N + suffix + '.' + E)
+            
         else:
+            if rename:
+                self.position=os.path.join(P, N + suffix)
             return os.path.join(P, N + suffix)
     
     def reNameFile(self,newName='notset',E='notset'):
@@ -167,10 +234,46 @@ class Pathable:
 
         for t in self.getFilesInPositionByExtension(ext=ext,sort=sort):
             print (t)
+    def getListOfFilesInPositionByExtension(self,ext=None,sort=True):
+        return [t for t in self.getFilesInPositionByExtension(ext=ext,sort=sort)]
+
+    def getListOfFileInPosition(self):
+        if not self.isDir():
+            return [self.getPath() +'/' +f for f in listdir(self.getPath()) if isfile(join(self.getPath(), f))]
+        else:
+            return [self.getPath() +'/' +f for f in listdir(self.getPath())]
+
     def createPathablePath(self):
         directory=self.getPath()
         if not os.path.exists(directory):
             os.makedirs(directory)
+    def getMiMEFileType(self):
+        return  mimetypes.guess_type(self.getPosition())
+    
+    def getFileType(self):
+        mime=self.getMiMEFileType()
+        return mime[0].split('/')[0]
+    
+    def isItAnImage(self):
+        return self.getFileType()=='image'
+
+    def isItAVideo(self):
+        return self.getFileType()=='video'
+
+    def isItCorrupted(self):
+        if self.isItAnImage():
+            try:
+                img = Image.open(self.position) # open the image file
+                img.verify() # verify that it is, in fact an image
+                return True
+
+            except (IOError, SyntaxError) as e:
+                print('Bad file:', self.position) #
+                return False
+        if self.isItAVideo():
+            return integv.verify(self.position,self.getMiMEFileType())
+
+
 
     
 
