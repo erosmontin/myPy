@@ -11,7 +11,7 @@ from os import listdir
 from os.path import isfile, join
 import mimetypes
 from PIL import Image
-import integv
+# import integv
 
 
 def unTarGz(fname):
@@ -260,18 +260,18 @@ class Pathable:
     def isItAVideo(self):
         return self.getFileType()=='video'
 
-    def isItCorrupted(self):
-        if self.isItAnImage():
-            try:
-                img = Image.open(self.position) # open the image file
-                img.verify() # verify that it is, in fact an image
-                return True
+    # def isItCorrupted(self):
+    #     if self.isItAnImage():
+    #         try:
+    #             img = Image.open(self.position) # open the image file
+    #             img.verify() # verify that it is, in fact an image
+    #             return True
 
-            except (IOError, SyntaxError) as e:
-                print('Bad file:', self.position) #
-                return False
-        if self.isItAVideo():
-            return integv.verify(self.position,self.getMiMEFileType())
+    #         except (IOError, SyntaxError) as e:
+    #             print('Bad file:', self.position) #
+    #             return False
+    #     if self.isItAVideo():
+    #         return integv.verify(self.position,self.getMiMEFileType())
 
 
 
@@ -284,8 +284,13 @@ class Pathable:
 
 import time
 import numpy as np
-class Timer:  #@save
-    """Record multiple running times."""
+class Timer():  #@save
+    """_summary_
+    frfrfr
+    frfrfr
+    frfrfr
+    frfrfr
+    """    
     def __init__(self):
         self.times = []
         self.start()
@@ -315,4 +320,7 @@ class Timer:  #@save
         return np.array(self.times).tolist()
 
 
+
+    
+    
 

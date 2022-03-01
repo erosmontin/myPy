@@ -1,6 +1,10 @@
 # this needs the me environment
+from configparser import Interpolation
+from math import prod
 import os
-from typing_extensions import Self 
+from pickle import TRUE
+from tabnanny import check
+from tkinter import Image
 import SimpleITK as sitk
 from SimpleITK.SimpleITK import ThresholdSegmentationLevelSetImageFilter
 import numpy as np
@@ -8,8 +12,12 @@ import pylab
 import nibabel as nib
 import sys
 import itertools
-
 from sklearn.feature_extraction import image
+
+from torch import initial_seed
+
+import scipy.constants as cnt
+from myPy import mything
 
 
 class IndexTracker(object):
@@ -52,13 +60,20 @@ class IndexTracker(object):
     @param imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[[1.0,0.0,0.0],[0,1.0.0,0.0],[0.0,0.0,1.0]]
 """
 
-def createSITKImagefromNumpyArray(nda, imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+def old_createSITKImagefromNumpyArray(nda, imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+    print("I was using this function but then i realized it didn't work as i wanted, in fact when you use getimagefromarray it already take into account the different indexing between numpy and sitk")
     img = sitk.GetImageFromArray(adjustNumpyArrayForITK(nda))
     img.SetDirection(imageDirection)
     img.SetOrigin(imageOrigin)
     img.SetSpacing(imageResolution)
     return img
 
+def createSITKImagefromArray(nda, imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],vector=False):
+    img = sitk.GetImageFromArray(nda,isVector=vector)
+    img.SetDirection(imageDirection)
+    img.SetOrigin(imageOrigin)
+    img.SetSpacing(imageResolution)
+    return img
 
 def getSITKImageGeometryInfo(sitkim):
     return  sitkim.GetSize(), sitkim.GetSpacing(), sitkim.GetOrigin(), sitkim.GetDirection()
@@ -72,17 +87,27 @@ def createUniformRandomSITKImageFromSITKImage(sitkim,min,max):
     return createRandomSITKImage(size,res,origin,directions,False,min,max)
 
 def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],random=True,low=0.0,high=1.0):
+    #this is for numpy-sitk indexing format
+    imageSize.reverse()
     if random:
         nda=np.random.random(imageSize)
     else:
         nda=np.random.uniform(low=low, high=high, size=imageSize)
 
-    return createSITKImagefromNumpyArray(nda,imageResolution,imageOrigin,imageDirection)
+    return createSITKImagefromArray(nda,imageResolution,imageOrigin,imageDirection)
+
+def createZerosSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
+    #this is for numpy-sitk indexing format
+    imageSize.reverse()
+    nda=np.zeros(imageSize)
+    return createSITKImagefromArray(nda,imageResolution,imageOrigin,imageDirection)
 
 def createLabelMapSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],values=[0,1]):
+    #this is for numpy-sitk indexing format
+    imageSize.reverse()
     nda = np.random.choice(values, size=imageSize)
     nda=np.uint8(nda)
-    return createSITKImagefromNumpyArray(nda,imageResolution,imageOrigin,imageDirection)
+    return createSITKImagefromArray(nda,imageResolution,imageOrigin,imageDirection)
 
 """ @brief creates an imaginable random image
     @param imageSize=[20,20,20],imageResolution=[1.0,1.0,1],imageOrigin=[0.0,0.0,0.0],imageDirection=[[1.0.0,0.0,0.0],[0.0,1.0.0,0.0],[0.0,0.0,1.0]]
@@ -103,9 +128,249 @@ def createRandomLabelmapImaginable(imageName='randomImaginable.nii.gz',imageSize
 
     
 
+def command_iteration(method):
+    if (method.GetOptimizerIteration() == 0):
+        print("Estimated Scales: ", method.GetOptimizerScales())
+    print(f"{method.GetOptimizerIteration():3} = {method.GetMetricValue():7.5f} : {method.GetOptimizerPosition()}")
+
+
+class Registrationable():        
+        
+        def __init__(self,fixed=None,moving=None):
+            
+            self.MovingRegisteredImaginable=Imaginable()
+            self.FixedImaginable=Imaginable()
+            self.MovingImaginable=Imaginable()
+            self.Transform=None
+            self.TransformDf=None
+            self.Log=mything.Log()
+
+            if fixed is not None:
+                if isinstance(fixed, str):
+                    self.FixedImaginable.setImage(sitk.ReadImage(fixed,sitk.sitkFloat32))
+                    self.Log.append("set Fixed image from file " + fixed)
+                elif isinstance(fixed,sitk.Image):
+                    self.FixedImaginable.setImage(fixed)
+                    self.Log.append("set Fixed image from image")
+                elif isinstance(fixed,Imaginable):
+                    self.FixedImaginable=fixed
+                else:
+                    self.Log.appendError("some problem with the fixed ")
+                    return False
+                self.reset()
+
+            if moving is not None:
+                if isinstance(moving, str):
+                    self.MovingImaginable.setImage(sitk.ReadImage(moving,sitk.sitkFloat32))
+                elif isinstance(moving,sitk.Image):
+                    self.MovingImaginable.setImage(moving)
+                elif isinstance(moving,Imaginable):
+                    self.MovingImaginable=moving
+                else:
+                    self.Log.appendError("some problem with the moving ")
+                    return False
+                
+                self.reset()
+
+  
+
+        def transformInitializer(self,moving):
+            fixed = self.FixedImaginable.getImage()
+            moving = self.MovingImaginable.getImage()
+            
+            tx2 = sitk.CenteredTransformInitializer(fixed, moving,
+                                sitk.Euler3DTransform(),
+                                sitk.CenteredTransformInitializerFilter.MOMENTS)
+            return tx2
+    
+        def getTransform(self):
+            if self.Transform is None:
+                o=self.register()
+                if o:
+                    return self.Transform
+                else:
+                    return None
+            else:
+                return self.Transform
+
+        def setTransform(self,t):
+
+            self.Transform=t
+        def writeTransform(self,fn):
+            t=self.getTransform()
+            if t is not None:
+                try:
+                    sitk.WriteTransform(t, fn)
+                    return True
+                    
+                except:
+                    return False
+            else:
+                return False
+        
+        def writeRegisterMovingImaginableAs(self,fn):
+            t=self.getMovingRegisteredImaginable()
+            if t is not None:
+                try:
+                    t.writeImageAs(fn)                    
+                    return True
+                except:
+                    return False
+            else:
+                return False
+
+
+
+        def register(self):
+            f=self.FixedImaginable.getImage()
+            m=self.MovingImaginable.getImage()
+    
+            initial_transform=self.transformInitializer()
+
+            registration_method = sitk.ImageRegistrationMethod()
+
+            # Similarity metric settings.
+            registration_method.SetMetricAsMeanSquares()
+            registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
+            registration_method.SetMetricSamplingPercentage(1)
+            
+
+            registration_method.SetInterpolator(sitk.sitkNearestNeighbor)
+
+            # Optimizer settings.
+            registration_method.SetOptimizerAsGradientDescent(learningRate=1, numberOfIterations=10000, convergenceMinimumValue=1e-6, convergenceWindowSize=10)
+            registration_method.SetOptimizerScalesFromPhysicalShift()
+
+            # Setup for the multi-resolution framework.            
+            registration_method.SetShrinkFactorsPerLevel(shrinkFactors = [2,1,1])
+            registration_method.SetSmoothingSigmasPerLevel(smoothingSigmas=[0,0,0])
+            registration_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+
+            # Don't optimize in-place, we would possibly like to run this cell multiple times.
+            registration_method.SetInitialTransform(initial_transform, inPlace=False)
+
+        
+            # registration_method.SetInitialTransform(initial_transform, inPlace=False)
+
+            registration_method.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(registration_method))
+
+            # Connect all of the observers so that we can perform plotting during registration.
+            # registration_method.AddCommand(sitk.sitkStartEvent, rgui.start_plot)
+            # registration_method.AddCommand(sitk.sitkEndEvent, rgui.end_plot)
+            # registration_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, rgui.update_multires_iterations) 
+            # registration_method.AddCommand(sitk.sitkIterationEvent, lambda: rgui.plot_values(registration_method))
+
+            final_transform = registration_method.Execute(f, m)
+            
+
+            # Always check the reason optimization terminated.
+            print('Final metric value: {0}'.format(registration_method.GetMetricValue()))
+            print('Optimizer\'s stopping condition, {0}'.format(registration_method.GetOptimizerStopConditionDescription()))
+
+
+            # self.MovingRegisteredImaginable.transformAndreshapeOverImage(self.FixedImaginable,final_transform,interpolator=sitk.sitkNearestNeighbor)
+            self.setTransform(final_transform)
+            print(final_transform)
+            return True
+        
+        def setMovingRegisteredImaginable(self,f):
+            self.MovingRegisteredImaginable=f
+
+        def getMovingRegisteredImaginable(self,interpolator=sitk.sitkNearestNeighbor):
+            if self.MovingRegisteredImaginable.isImageSet():
+                return self.MovingRegisteredImaginable
+            else:
+                self.MovingRegisteredImaginable=self.MovingImaginable.getDuplicate()
+                self.MovingRegisteredImaginable.transformAndreshapeOverImage(self.FixedImaginable,self.getTransform(),interpolator=interpolator)
+                return self.MovingRegisteredImaginable
+
+
+
+        def setTransform(self,T):
+            self.Transform=T
+        
+        def getTransform(self):
+            return self.Transform
+
+        
+        def reset(self):
+            self.Transform=None
+            self.TransformDf=None
+            self.Log.append("reset","reset")
+        
+        def setFixedImaginable(self,F):
+            self.FixedImaginable=F
+            self.reset()
+        
+        def getFixedImaginable(self):
+            return self.FixedImaginable
+
+        def setMovingImaginable(self,F):
+            self.MovingImaginable=F
+            self.reset()
+        
+        def getMovingImaginable(self):
+            return self.MovingImaginable
+
+        def warpMovingImaginable(self,t,reference=None):
+            if reference is None:
+                reference=self.getFixedImaginable()
+            m=self.getMovingRegisteredImaginable()
+            m.transformAndreshapeOverImage(reference,t,interpolator=sitk.sitkLinear)
+
+def getIndexPositions(list_of_elems, element):
+    ''' Returns the indexes of all occurrences of give element in
+    the list- listOfElements '''
+    index_pos_list = []
+    index_pos = 0
+    while True:
+        try:
+            # Search for item in list from indexPos to the end of list
+            index_pos = list_of_elems.index(element, index_pos)
+            # Add the index position in list
+            index_pos_list.append(index_pos)
+            index_pos += 1
+            
+        except ValueError as e:
+            break
+    return index_pos_list
+
+from operator import itemgetter
+def getiListIndexes(l,indexes):
+    return [l[index] for index in indexes]
+
+def checkRegistrationAccuracyWithRegionOfInterest(referenceRoiable,testRoiable,transformArray,referenceThreshold=1,testThreshold=1):
+    
+    c=0
+    check=ROIable()
+    check.setReference(referenceRoiable)
+    check.setReferenceThreshold(referenceThreshold)
+    similarity=[]
+    for t in transformArray:
+        im=testRoiable.getDuplicate()
+        im.transformAndreshapeOverImage(referenceRoiable,t,interpolator=sitk.sitkNearestNeighbor)
+        check.setTest(im)
+        check.setTestThreshold(testThreshold)
+        similarity.append(check.getSimilarity())
+    return similarity
+
+def getBestRegistrationAccuracyWithRegionOfInterest(referenceRoiable,testRoiable,transformArray,referenceThreshold=1,testThreshold=1):
+    O=checkRegistrationAccuracyWithRegionOfInterest(referenceRoiable,testRoiable,transformArray,referenceThreshold,testThreshold)
+    return getIndexPositions(O,max(O))
+
+
+
+
+
+
+
+    
+
+    
 class Imaginable():
+    
     def __init__(self,**kwargs ):
-        #inputFileName=lslsll.nii.gz
+
         self.InputFileName = None
         self.OutputFileName = None
         self.Image = None
@@ -123,6 +388,11 @@ class Imaginable():
                 self.setInputFileName(kwargs['inputFileName'])
             if 'outputFileName' in kwargs:
                 self.setOutputFileName(kwargs['outputFileName'])
+    def isImageSet(self):
+        if self.getImage() is None:
+            return False
+        else:
+            return True
     def setVerbose(self,v):
         self.verbose=v
     def getVerbose(self):
@@ -145,7 +415,6 @@ class Imaginable():
     def getImage(self):
         if self.Image is None:
             if self.getInputFileName() is None:
-                print("No input Image set")
                 return None
             self.readImage()
         return self.Image
@@ -153,6 +422,16 @@ class Imaginable():
     def getImageSize(self):
         image=self.getImage()
         return image.GetSize()
+    
+    def getVoxelVolume(self):
+        """get the volume of a voxel in the imaginable
+
+        Returns:
+            float: volume
+        """        
+        # image=self.getImage()
+        return prod(self.getImageSpacing())
+
 
     def getImageDirections(self):
         image=self.getImage()
@@ -187,6 +466,7 @@ class Imaginable():
         return image.GetPixelIDValue(), image.GetPixelIDTypeAsString()
 
     def setImage(self,im):
+        #simpleitk image
         self.Image = im
     
     def getImageArray(self):
@@ -204,12 +484,12 @@ class Imaginable():
         return S
 
     def __tellme(self,m):
-        if(self.getVerbose):
+        if(self.getVerbose()):
             print(m)
     def __del__(self):
         self.__tellme("I'm being automatically destroyed. Goodbye!")
     
-    def setImageArray(self,array,changepositions=True):
+    def setImageArray(self,array,changepositions=False, vector=False):
         #input is a nd array #         nda = sitk.GetArrayFromImage(image) or image.getImageArray()
         image=self.getImage()
         if image is None:
@@ -248,7 +528,8 @@ class Imaginable():
         for key in image.GetMetaDataKeys():
             print("\"{0}\":\"{1}\"".format(key, image.GetMetaData(key)))
     def getImageAsNumpyArray(self):
-        return sitk.GetArrayFromImage(self.getImage())
+        #it's the same!!!
+        return self.getImageArray()
 
     def viewAxial(self):
         fig, ax = pylab.subplots(1, 1)
@@ -333,6 +614,29 @@ class Imaginable():
         newDirections=targetImage.getImageDirections(),
         newSpacing=targetImage.getImageSpacing()
         )
+
+    def transformAndreshapeOverImage(self,tImage,transform,**kwargs):
+        if kwargs is None:
+            print("start")
+        else:
+            if 'interpolator' in kwargs:
+                interpolator= kwargs['interpolator']
+            else:
+                interpolator =  sitk.sitkLinear
+        if isinstance(tImage,sitk.Image):
+            targetImage=Imaginable()
+            targetImage.setImage(tImage)
+        else:
+            targetImage=tImage
+        return self.reshapeImageToNewGrid(pixelValue=0,
+        intrepolator= interpolator,
+        newSize= targetImage.getImageSize(),
+        newOrigin=targetImage.getImageOrigin(),
+        newDirections=targetImage.getImageDirections(),
+        newSpacing=targetImage.getImageSpacing(),
+        transform=transform
+        )
+
     
     def resizeImageInVoxelSpace(self,sizemin,sizemax,**kwargs):
         spacing='original'
@@ -414,6 +718,7 @@ class Imaginable():
             
 
         self.setImage(regridSitkImage(image, newSize, transform , interpolator, newOrigin, newSpacing, newDirections, default_value,image.GetPixelIDValue()))
+        return self.getImage()
 
 
     def isPointInside(self,P):
@@ -461,7 +766,7 @@ class Imaginable():
 
     def transformImageAffine(self,transform):
         #transform will be parsed with the cosines
-        print('no roiii')
+        self.__tellme('no roiii')
         image=self.getImage()
         thetransform=self.composeImageCosinesTransform(transform)
         return transformImage(image,thetransform,interpolator=sitk.sitkLinear),thetransform
@@ -758,14 +1063,14 @@ def transformImageAffine2(self,transform=None):
         return output_image,thetransform
 
 
-class ROIable(Imaginable):
+class ROIable():
     def __init__(self):
         self.Reference=None
         self.Test=None
         self.Overlap=None
         self.ReferenceThreshold=1
         self.TestThreshold=1
-    
+        
     def getReference(self):
         return self.Reference
     def getTest(self):
@@ -862,7 +1167,72 @@ class ROIable(Imaginable):
             return ov.GetHausdorffDistance()
         else:
             return None
-    
+    def getVolmeSimilarity(self):
+        ov=self.getOverlapFilter()
+        if ov is not None:
+            return ov.GetVolumeSimilarity()
+        else:
+            return None
+
+    def getMeanOverlap(self):
+        ov=self.getOverlapFilter()
+        if ov is not None:
+            return ov.GetMeanOverlap()
+        else:
+            return None
+
+    def getSimilarity(self):
+        ov = sitk.SimilarityIndexImageFilter()
+        R=self.getReference()
+        T=self.getTest()
+        t=T.getImage()
+        r=R.getImage()
+
+        thr=self.getReferenceThreshold()
+        tht=self.getTestThreshold()
+        ov.Execute(r==thr, t==tht)
+        if ov is not None:
+            return ov.GetSimilarityIndex()
+        else:
+            return None
+
+    def getOverlappedVoxels(self):
+        ov = sitk.AddImageFilter()
+        R=self.getReference()
+        T=self.getTest()
+        t=T.getImage()
+        r=R.getImage()
+        thr=self.getReferenceThreshold()
+        tht=self.getTestThreshold()
+        L=ov.Execute(r==thr, t==tht)
+        if ov is not None:
+            s=sitk.StatisticsImageFilter()
+            s.Execute(L==2)
+            return s.GetSum()
+        else:
+            return None
+
+    def getNonOverlappedVoxels(self):
+        ov = sitk.AddImageFilter()
+        R=self.getReference()
+        T=self.getTest()
+        t=T.getImage()
+        r=R.getImage()
+        thr=self.getReferenceThreshold()
+        tht=self.getTestThreshold()
+        L=ov.Execute(r==thr, t==tht)
+        if ov is not None:
+            s=sitk.StatisticsImageFilter()
+            s.Execute(L!=2)
+            return s.GetSum()
+        else:
+            return None
+
+            
+
+
+
+
     def testImages(self,pt): 
         #check if th images are overlapped
         r=os.path.join(pt,'r.nii.gz')
@@ -872,15 +1242,30 @@ class ROIable(Imaginable):
         T=self.getTest()
         T.writeImage(outputFileName=t)
     
+    def getAllMetrics(self):
+        O={
+            "Hahusorf":self.getHahusdorf(),
+            "FNE":self.getFalseNegativeError(),
+            "FPE":self.getFalsePostiveError(),
+            "Dice":self.getDice(),
+            "Jaccard":self.getJaccard(),
+            "VS":self.getVolmeSimilarity(),
+            "MO":self.getMeanOverlap(),
+            "SM":self.getSimilarity(),
+            "OV":self.getOverlappedVoxels(),
+            "NOV":self.getNonOverlappedVoxels(),
+        }
+        return O
+    
 
         
 
-
+#used in the classes
 def transformImage(image, transform, **kwargs):
     # Output image Origin, Spacing, Size, Direction are taken from the reference
     # image in this call to Resample
     default_value = 0
-    interpolator = sitk.sitkCosineWindowedSinc
+    interpolator = sitk.sitkLinear
     reference_image=image
 
     if kwargs is None:
@@ -908,8 +1293,12 @@ def adjustNumpyArrayForITK(array):
         return np.swapaxes(array,0,2)
     elif(len(array.shape)==2):
         return np.swapaxes(array,0,1)
+    elif(len(array.shape)==4):
+        return np.transpose(array, (3, 2, 1, 0) )
+    elif(len(array.shape)==5):
+        return np.transpose(array, (4 ,3, 2, 1, 0) )
     else:
-        print("numpy shap enot yet seen!! in adjustNumpyArrayForITK")
+        print("numpy shape not yet seen!! in adjustNumpyArrayForITK")
         return None
         
 

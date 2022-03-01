@@ -8,7 +8,10 @@ dependencies:
   - simpleitk>2.0
   - matplotlib
   - nibabel
-  - integv
+  - requests
+  - pip
+  - pip:
+     - integv
 #  - pip
 #  - pip:
 #    - yahoo_fin
