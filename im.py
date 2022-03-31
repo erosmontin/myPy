@@ -1,10 +1,6 @@
 # this needs the me environment
-from configparser import Interpolation
-from math import prod
 import os
-from pickle import TRUE
-from tabnanny import check
-from tkinter import Image
+
 import SimpleITK as sitk
 from SimpleITK.SimpleITK import ThresholdSegmentationLevelSetImageFilter
 import numpy as np
@@ -12,13 +8,12 @@ import pylab
 import nibabel as nib
 import sys
 import itertools
-from sklearn.feature_extraction import image
-
-from torch import initial_seed
-
 import scipy.constants as cnt
-from myPy import mything
-
+import math
+try:
+    import mything
+except:
+    from myPy import mything
 
 class IndexTracker(object):
         def __init__(self, ax, X):
@@ -93,7 +88,8 @@ def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],ima
         nda=np.random.random(imageSize)
     else:
         nda=np.random.uniform(low=low, high=high, size=imageSize)
-
+    #to get back the original value to right position
+    imageSize.reverse()
     return createSITKImagefromArray(nda,imageResolution,imageOrigin,imageDirection)
 
 def createZerosSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1]):
@@ -369,13 +365,16 @@ def getBestRegistrationAccuracyWithRegionOfInterest(referenceRoiable,testRoiable
     
 class Imaginable():
     
-    def __init__(self,**kwargs ):
+    def __init__(self,fileName=None,**kwargs ):
 
         self.InputFileName = None
         self.OutputFileName = None
         self.Image = None
         self.verbose=False
         
+        if fileName is not None:
+            self.setInputFileName(fileName)
+            
         if kwargs is None:
             print("start")
         elif len(kwargs)==1: #immaginable('filename.nii')
@@ -388,11 +387,34 @@ class Imaginable():
                 self.setInputFileName(kwargs['inputFileName'])
             if 'outputFileName' in kwargs:
                 self.setOutputFileName(kwargs['outputFileName'])
+
+    def takeThisImage(self,ima):
+        
+        if isinstance(ima, str):
+            self.setInputFileName(ima)
+        elif isinstance(ima,sitk.Image):
+            self.setImage(ima)
+        elif isinstance(ima,Imaginable):
+                    self=ima
+        
+        else:
+            return False
+        return True
+ 
     def isImageSet(self):
         if self.getImage() is None:
             return False
         else:
             return True
+
+    def isImaginable(self):
+        O=False
+        for b in self.__class__.__bases__:
+            if isinstance(b,Imaginable):
+                O=True
+                break
+        return O
+
     def setVerbose(self,v):
         self.verbose=v
     def getVerbose(self):
@@ -427,12 +449,33 @@ class Imaginable():
         """get the volume of a voxel in the imaginable
 
         Returns:
+            float: voxel volume
+        """        
+        # image=self.getImage()
+        return math.prod(self.getImageSpacing())
+
+    def getNumberofVoxels(self):
+        """get the number of a voxel in the imaginable
+
+        Returns:
+            float: N voxels
+        """        
+        # image=self.getImage()
+        return math.prod(self.getImageSize())
+
+    def getVolume(self):
+        """get the volume of the imaginable
+
+        Returns:
             float: volume
         """        
         # image=self.getImage()
-        return prod(self.getImageSpacing())
+        return math.prod(self.getVoxelVolume()*self.getNumberofVoxels())
 
-
+    def getNumberOfNonZeroVoxels(self,image=None):
+        if image is  None:
+            image=self
+        return np.count_nonzero(image.getImageArray())
     def getImageDirections(self):
         image=self.getImage()
         return image.GetDirection()
@@ -458,8 +501,7 @@ class Imaginable():
         return image.GetNumberOfComponentsPerPixel()
 
     def getImagenumberOfComponents(self):
-        image=self.getImage()
-        return image.GetNumberOfComponentsPerPixel()
+        return self.getImageNumberOfComponentsPerPixel()
 
     def getImagePixelType(self):
         image=self.getImage()
@@ -497,7 +539,7 @@ class Imaginable():
                 array=adjustNumpyArrayForITK(array)
             
             self.setImage(sitk.GetImageFromArray(array, isVector=False))
-            print('no Information on Image')
+            
         else:
             nda = sitk.GetImageFromArray(array)
             nda.CopyInformation(image)
@@ -515,7 +557,19 @@ class Imaginable():
     def readImage(self):
         self.setImage(sitk.ReadImage(self.getInputFileName()))
     def writeImageAs(self,filename):
-        self.writeImage(outputFileName=filename)
+        try:
+            self.writeImage(outputFileName=filename)
+            print(f'file {filename} saved')
+            return True
+        except:
+            return False
+
+    def createZerosNumpyImageSameDimensionOfImaginable(self,dtype=float):
+        size = list(self.getImageSize())
+        size.reverse()
+        return np.zeros(size,dtype=dtype)
+
+        
     def writeImage(self,**kwargs):
         if kwargs is not None:
             if 'outputFileName' in kwargs:
@@ -561,9 +615,18 @@ class Imaginable():
         self.setImage(regridSitkImage(image, newSize, centered_transform,  interpolator, reference_origin, reference_spacing, reference_direction, 0.0,image.GetPixelIDValue()))
         return True
 
-    def cropImage(self,lowerB,upperB):
+    def cropImagev0(self,lowerB,upperB):
         image=self.getImage()
         return self.setImage(sitk.Crop(image,lowerB,upperB))
+
+    def cropImage(self,lowerB,upperB):
+        S=[u-l for l,u in zip(lowerB,upperB)]
+        image=self.getImage()
+        crop = sitk.ExtractImageFilter()
+        crop.SetSize(S)
+        crop.SetIndex(lowerB)
+        cropped_image = crop.Execute(image)
+        return self.setImage(cropped_image)
 
     def getImageCornersVoxel(self,image=None):
         # image is an IMmaginable image
@@ -614,6 +677,59 @@ class Imaginable():
         newDirections=targetImage.getImageDirections(),
         newSpacing=targetImage.getImageSpacing()
         )
+
+
+    def saveVoxelsCloudAs(self,filename,mask=None):
+        return self.getVoxelsCloud(filename=filename,mask=mask)
+
+    def writeVoxelsCloudAs(self,filename,mask=None):
+        return self.saveVoxelsCloudAs(filename,mask)
+
+    def writePointsCloudAs(self,filename,mask=None):
+        return self.savePointsCloudAs(filename,mask)
+
+    def savePointsCloudAs(self,filename,mask=None):
+        return self.getPointsCloud(filename=filename)
+    def getPointsCloud(self,image=None,filename=None,mask=None):
+        """ Generate a points cloud of the image
+        Args:
+            image (_type_): if you pass an image we'll give you back the point cvloud of that image
+        """
+
+        if image is None:
+            image=self
+        
+        if(isinstance(image,sitk.Image)):
+            im=image
+            image=Imaginable()
+            image.setImage(im)
+        if mask is None:
+            PC=image.__scanPointsCloud__(realworldcoordinates=True,filename=filename)
+        else:
+            PC=image.__scanPointsCloudMasked__(realworldcoordinates=True,filename=filename,mask=mask)
+        return PC
+
+    def getVoxelsCloud(self,image=None,filename=None,mask=None):
+        """ Generate a voxels cloud of the image
+        Args:
+            image (_type_): if you pass an image we'll give you back the point cvloud of that image
+        """
+        if image is None:
+            image=self
+
+        if(isinstance(image,sitk.Image)):
+            im=image
+            image=Imaginable()
+            image.setImage(im)
+        if mask is None:
+            PC=image.__scanPointsCloud__(realworldcoordinates=False,filename=filename)
+        else:
+            if mask.isImageSet():
+                PC=image.__scanPointsCloudMasked__(realworldcoordinates=False,filename=filename,mask=mask)
+            else:
+                PC=image.__scanPointsCloudMasked__(realworldcoordinates=False,filename=filename)
+        return PC
+
 
     def transformAndreshapeOverImage(self,tImage,transform,**kwargs):
         if kwargs is None:
@@ -899,7 +1015,7 @@ class Imaginable():
         size = list(image.GetSize())
         size[2] = 0
         index = [0, 0, slice]
-        out = self.__SliceExtractor(size,index,image)
+        out = self.__SliceExtractor(image,size,index)
         return out
     def getCoronalSlice(self,slice,image=None):
         if image is None:
@@ -908,7 +1024,7 @@ class Imaginable():
         size = list(image.GetSize())
         size[1] = 0
         index = [0, slice,0]
-        out = self.__SliceExtractor(size,index,image)
+        out = self.__SliceExtractor(image,size,index)
         return out
     def getSagittalSlice(self,slice,image=None):
         if image is None:
@@ -917,7 +1033,7 @@ class Imaginable():
         size = list(image.GetSize())
         size[0] = 0
         index = [slice,0,0]
-        out = self.__SliceExtractor(size,index,image)
+        out = self.__SliceExtractor(image,size,index)
         return out
     
     def writeSliceAs(self,plan,index,filename,image):
@@ -932,17 +1048,76 @@ class Imaginable():
             slice=self.getCoronalSlice(index,image)
         
 
+    
 
-
-    def __SliceExtractor(size,index,image):
+    def __SliceExtractor(self,image,size,index):
         Extractor = sitk.ExtractImageFilter()
         Extractor.SetSize(size)
         Extractor.SetIndex(index)
         return Extractor.Execute(image)
-
     
-        
-        
+    def __scanPointsCloudMasked__(self,realworldcoordinates=True,filename=None,mask=None):
+        NC=self.getImageNumberOfComponentsPerPixel()
+        dimensions=self.getImageDimension()
+        size=self.getImageSize()
+        L=[]
+        if mask is None:
+            return None
+        else:
+            if dimensions==3:
+                X,Y,Z=size
+                for x in range(X):
+                    for y in range(Y):
+                        for z in range(Z):
+                            P=[x,y,z]
+                            V=self.getImage().GetPixel(P)
+                            M=mask.getImage().GetPixel(P)
+                            if M>0:
+                                if realworldcoordinates:
+                                        P=self.getIndexFromCoordinates(P)
+                                l={'coordinates':P,'values':V}
+                                L.append(l)
+
+            if filename is not None:
+                O=True
+                C=[k['coordinates'] for k in L]
+                V=[k['values'] for k in L]
+                return self.__writeToFile__(C,V,filename)
+            else:
+                return L 
+
+    def __scanPointsCloud__(self,realworldcoordinates=True,filename=None):
+        NC=self.getImageNumberOfComponentsPerPixel()
+        dimensions=self.getImageDimension()
+        size=self.getImageSize()
+        L=[]
+        if dimensions==3:
+            X,Y,Z=size
+            for x in range(X):
+                for y in range(Y):
+                    for z in range(Z):
+                        P=[x,y,z]
+                        V=self.getImage().GetPixel(P)
+                        if realworldcoordinates:
+                                P=self.getIndexFromCoordinates(P)
+                        l={'coordinates':P,'values':V}
+                        L.append(l)
+
+        if filename is not None:
+            O=True
+            C=[k['coordinates'] for k in L]
+            V=[k['values'] for k in L]
+            return self.__writeToFile__(C,V,filename)
+        else:
+            return L    
+       
+    def __writeToFile__(self,C,V,filename):
+        with open(filename, 'w') as f:
+            c=0
+            for k in C:
+                f.write(f'{k[0]}, {k[1]}, {k[2]} {V[c]}\n')
+                c=c+1
+
 
 
 

@@ -21,6 +21,6 @@ dependencies:
 # conda env create -f environment.yml
 # activate and ->conda env update --file local.yml --prune
 #or
-# conda env update --name myenv --file local.yml --prune
+# conda env update --name me --file local.yml --prune
 
 

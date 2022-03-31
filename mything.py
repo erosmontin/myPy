@@ -71,3 +71,34 @@ class Log():
         """        
         for l in self.log:
             print(l)
+
+
+import subprocess
+
+class BashIt(object):
+    def __init__(self) -> None:
+        self.bashCommand=None
+        self.Log=Log('Bash')
+    def setCommand(self,comm):
+        self.bashCommand=comm
+        self.Log.append(f'added command {comm}')
+    def getCommand(self):
+        return self.bashCommand
+    def run(self):
+        self.Log.append(f'running')
+        bashCommand=self.getCommand()
+        if bashCommand is not None:
+            process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+            self.Log.append(f'running {bashCommand}')
+            self.output, self.error = process.communicate()
+            self.Log.append(f'completed {bashCommand}')
+            return True
+        else:
+            return False
+
+
+    def getBashError(self):
+        return self.error
+    
+    def getBashOutput(self):
+        return self.output

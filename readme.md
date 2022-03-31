@@ -92,6 +92,16 @@ print(A.getFalsePostiveError())
 print(A.getHahusdorf())
 A.testImages('/data/')
 ```
+
+
+
+        # Create an itk image from the simpleitk image via numpy array
+        itk_image = itk.GetImageFromArray(sitk.GetArrayFromImage(sitk_image), is_vector = sitk_image.GetNumberOfComponentsPerPixel()>1)
+        itk_image.SetOrigin(sitk_image.GetOrigin())
+        itk_image.SetSpacing(sitk_image.GetSpacing())   
+        itk_image.SetDirection(itk.GetMatrixFromArray(np.reshape(np.array(sitk_image.GetDirection()), [image_dimension]*2)))
+        print('ITK image value at {0}: {1}'.format(index, itk_image.GetPixel(index)))
+
 ## References
 If you enjoyed this package consider citing one of my articles in your papers. Here is the link to my [*publications*](http://me.biodimensional.com)
 

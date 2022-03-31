@@ -122,6 +122,14 @@ class Pathable:
         return os.path.join(P, prefix + N)
 
     def changePath(self,path):
+        """Change the path of the position
+
+        Args:
+            path (str): new path to join tho the name
+
+        Returns:
+            _type_: the new position
+        """        
         basename=self.getBaseName()
         self.position=os.path.join(path,basename)
         return self.getPosition()
