@@ -22,7 +22,7 @@ class Log():
         if init is None:
             init="Log (" + self.version + ")"
 
-        self.log=[{"when":self.getFormattedDatetime(self.now),"what":init,"status":"start","settings":{"author":"Eros Montin","mail":"eros.montin@gmail.com","motto":"Forty-six and two are just ahead of me"}}]
+        self.log=[{"when":self.getFormattedDatetime(self.now),"what":init,"type":"start","settings":{"author":"Eros Montin","mail":"eros.montin@gmail.com","motto":"Forty-six and two are just ahead of me"}}]
     def setTimeFormat(self,f):
         self.format=f
         #  should validate this at some point TODO
@@ -32,13 +32,13 @@ class Log():
         return t.strftime(self.format)
     def getNow(self):
         return self.getFormattedDatetime(datetime.datetime.now())
-    def setDefaultStatus(self,f):
+    def setDefaultType(self,f):
         if isinstance(f,str):
             self.dflts=f
             return True
         else:
             return False
-    def getDefaultStatus(self):
+    def getDefaultType(self):
         return self.dflts
     
     def setDefaultError(self,f):
@@ -55,18 +55,18 @@ class Log():
             m="ERROR"
         self.append(m,self.getDefaultError())
 
-    def append(self,message,status=None,settings=None):
+    def append(self,message,type=None,settings=None):
         """append the current message to the log using the time of the call
 
         Args:
             - message (_type_): The message to be logged.
-            - status (_type_, optional): a tag good for automatic identification of status, for example ERROR or DONE. Defaults to "flow". but you can customize to set custom message
+            - type (_type_, optional): a tag good for automatic identification of type, for example ERROR or DONE. Defaults to "flow". but you can customize to set custom message
             - settings (_type_, optional): a dictoinary of options. Defaults to None.
         """        
-        if status is None:
-            status=self.getDefaultStatus()
+        if type is None:
+            type=self.getDefaultType()
 
-        self.log.append({"when":self.getNow(),"what":message,"status":status,"settings":settings})
+        self.log.append({"when":self.getNow(),"what":message,"type":type,"settings":settings})
     
     def getWhatHappened(self):
         self.printWhatHappened()
@@ -93,7 +93,7 @@ class Log():
     def saveLogAs(self,fn):
         return self.writeLogAs(fn)
     
-    
+
 
 
 import subprocess
