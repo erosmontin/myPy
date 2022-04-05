@@ -1,4 +1,5 @@
 import datetime
+import json
 class Log():
     """ A Log Class.
     Just append to the log and we take care of the timing.
@@ -66,11 +67,33 @@ class Log():
             status=self.getDefaultStatus()
 
         self.log.append({"when":self.getNow(),"what":message,"status":status,"settings":settings})
-    def getWhathappened(self):
+    
+    def getWhatHappened(self):
+        self.printWhatHappened()
+
+    def printWhatHappened(self):
         """print the events logged
         """        
         for l in self.log:
             print(l)
+    
+    def getLog(self):
+        """gett the events logged
+        """
+        return self.log
+    
+    def writeLogAs(self,fn):
+        try:
+            with open(fn, 'w') as fout:
+                json.dump(self.getLog(), fout)
+            return True
+        except:
+            return False
+    
+    def saveLogAs(self,fn):
+        return self.writeLogAs(fn)
+    
+    
 
 
 import subprocess
