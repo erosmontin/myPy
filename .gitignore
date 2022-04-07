@@ -2,3 +2,4 @@ __pycache__/
 _t*.py
 test/
 model.png
+__pycache__/*

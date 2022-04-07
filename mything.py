@@ -1,5 +1,7 @@
 import datetime
 import json
+
+
 class Log():
     """ A Log Class.
     Just append to the log and we take care of the timing.
@@ -67,7 +69,18 @@ class Log():
             type=self.getDefaultType()
 
         self.log.append({"when":self.getNow(),"what":message,"type":type,"settings":settings})
-    
+    def appendFullLog(self,fn):
+        if isinstance(fn,str):
+            L=readJson(fn)
+        elif isinstance(fn,Log):
+            L=fn.getLog()
+        else:
+            return False
+        for l in L:
+            self.log.append(l)
+        return True
+        
+
     def getWhatHappened(self):
         self.printWhatHappened()
 
@@ -125,3 +138,13 @@ class BashIt(object):
     
     def getBashOutput(self):
         return self.output
+
+
+def readJson(filename):
+    with open(filename) as f:
+        data = json.load(f)
+    return data
+
+def writeJsonFile(filename,data):
+    with open(filename, 'w') as outfile:
+        json.dump(data, outfile)

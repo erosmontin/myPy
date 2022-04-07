@@ -122,7 +122,19 @@ def createRandomLabelmapImaginable(imageName='randomImaginable.nii.gz',imageSize
     sitk=createLabelMapSITKImage(imageSize,imageResolution,imageOrigin,imageDirection,values)
     return createImaginableFormSITKImage(sitk,imageName)
 
-    
+def createZerosImaginable(imageName='randomImaginable.nii.gz',imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],values=[0,1]):
+    sitk=createZerosSITKImage(imageSize,imageResolution,imageOrigin,imageDirection,values)
+    return createImaginableFormSITKImage(sitk,imageName)
+
+def createZerosImaginableSameSizeOfImaginable(imag,imageName='random.nii.gz'):
+    imageSize,imageResolution,imageOrigin,imageDirection=getImaginableInformation(imag)
+    print(imageDirection)
+    sitk=createZerosSITKImage(imageSize,imageResolution,imageOrigin,imageDirection)
+    return createImaginableFormSITKImage(sitk,imageName)
+
+def getImaginableInformation(immag):
+    immag=Imaginable()
+    return immag.getImageSize(), immag.getImageSpacing(),immag.getImageOrigin(),immag.getImageDirections()
 
 def command_iteration(method):
     if (method.GetOptimizerIteration() == 0):
@@ -792,7 +804,21 @@ class Imaginable():
         add=imaginableToBeAdd.getImage()
         return self.setImage(image+add)
 
-         
+    def applyABS(self):
+        m=self.getImage()
+        try:
+            ABS=sitk.ComplexToModulusImageFilter()
+            self.setImage(ABS.Execute(m))
+        except:
+            try:
+                ABS2=sitk.ModulusImageFilter()
+                self.setImage(ABS2.Execute(m))
+            except:
+                return False
+        return True
+
+
+
         
     def reshapeImageToNewGrid(self,**kwargs):
         image=self.getImage()
@@ -983,7 +1009,7 @@ class Imaginable():
     def cast(self,type,image=None):
         if image is None:
             image=self.getImage()
-
+        
         return sitk.Cast(image,type)
 
 
