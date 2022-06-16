@@ -83,7 +83,13 @@ def createUniformRandomSITKImageFromSITKImage(sitkim,min,max):
 
 def createRandomSITKImage(imageSize=[20,20,20],imageResolution=[1.0,1.0,1.0],imageOrigin=[0.0,0.0,0.0],imageDirection=[1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1],random=True,low=0.0,high=1.0):
     #this is for numpy-sitk indexing format
-    imageSize.reverse()
+    try:
+        imageSize.reverse()
+    except:
+        imageSize=list(imageSize)
+        imageSize.reverse()
+        print(imageSize)
+
     if random:
         nda=np.random.random(imageSize)
     else:
@@ -421,6 +427,8 @@ class Imaginable():
 
     def isImaginable(self):
         O=False
+        if isinstance(self,Imaginable):
+            return True
         for b in self.__class__.__bases__:
             if isinstance(b,Imaginable):
                 O=True
@@ -581,6 +589,13 @@ class Imaginable():
         size.reverse()
         return np.zeros(size,dtype=dtype)
 
+
+    def resampleOnTargetImage(self,target):
+        if target.isImaginable():
+            target=target.getImage()
+        O=sitk.Resample(self.getImage(),target)
+
+        self.setImage(O)
         
     def writeImage(self,**kwargs):
         if kwargs is not None:
@@ -632,8 +647,13 @@ class Imaginable():
         return self.setImage(sitk.Crop(image,lowerB,upperB))
 
     def cropImage(self,lowerB,upperB):
-        S=[u-l for l,u in zip(lowerB,upperB)]
         image=self.getImage()
+        U=self.getImageSize()
+        for t in range(len(upperB)):
+            if ((upperB[t]==0) |(upperB[t]==np.NaN)):
+                upperB[t]=U[t]
+
+        S=[u-l for l,u in zip(lowerB,upperB)]
         crop = sitk.ExtractImageFilter()
         crop.SetSize(S)
         crop.SetIndex(lowerB)
@@ -1436,12 +1456,20 @@ class ROIable():
 
     def testImages(self,pt): 
         #check if th images are overlapped
-        r=os.path.join(pt,'r.nii.gz')
-        t=os.path.join(pt,'t.nii.gz')
+        ro=os.path.join(pt,'r.nii.gz')
+        to=os.path.join(pt,'t.nii.gz')
+        
         R=self.getReference()
-        R.writeImage(outputFileName=r)
         T=self.getTest()
-        T.writeImage(outputFileName=t)
+        t=T.getImage()
+        r=R.getImage()
+        RA=Imaginable()
+        RA.setImage(r==self.getReferenceThreshold())
+        RA.writeImage(outputFileName=ro)
+
+        TA=Imaginable()
+        TA.setImage(t==self.getTestThreshold())
+        TA.writeImage(outputFileName=to)
     
     def getAllMetrics(self):
         O={
@@ -1516,6 +1544,7 @@ def dicomread(fname,dirout=None):
     reader = sitk.ImageSeriesReader()
 
     dicom_names = reader.GetGDCMSeriesFileNames(fname)
+    reader.set
     reader.SetFileNames(dicom_names)
     reader.MetaDataDictionaryArrayUpdateOn()
     reader.LoadPrivateTagsOn()
@@ -1559,4 +1588,22 @@ def dicomread(fname,dirout=None):
     #     image_slice.SetMetaData("0008|0013", time.strftime("%H%M%S")) # Instance Creation Time
     #     image_slice.SetMetaData("0020|0032", '\\'.join(map(str,filtered_image.TransformIndexToPhysicalPoint((0,0,i))))) # Image Position (Patient)
     #     image_slice.SetMetaData("0020,0013", str(i)) # Instance Number
+
+
+def dcm2nii(pt,out=None):
+    print("Reading Dicom directory:", pt)
+    reader = sitk.ImageSeriesReader()
+    dicom_names = reader.GetGDCMSeriesFileNames(pt)
+    reader.SetFileNames(dicom_names)
+    image = reader.Execute()
+    size = image.GetSize()
+    print("Image size:", size[0], size[1], size[2])
+    if out:
+        print("Writing image:", out)
+        sitk.WriteImage(image,out)
+        return 
+    else:
+        o=Imaginable();
+        o.setImage(image)
+    return o
 

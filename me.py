@@ -165,7 +165,9 @@ class Pathable:
             if rename:
                 self.position=os.path.join(P, N + suffix)
             return os.path.join(P, N + suffix)
-    
+    def changeExtension(self,ext):
+        self.position=self.reNameFile(E=ext)
+        return self.position
     def reNameFile(self,newName='notset',E='notset'):
         if E =='notset':
             E = self.getExtension()
@@ -237,6 +239,25 @@ class Pathable:
             return sorted(glob.glob(A))
         else:
             return glob.glob(A)
+
+    def getFilesInPositionByExtensionAndPattern(self,pattern=None,sort=True):
+        if pattern is None:
+            A = self.getStringForSearchingingInDirectoryallFilesWithExtension()
+        else:
+            A = self.reNameFile(pattern + '*')
+
+        if sort:
+            return sorted(glob.glob(A))
+        else:
+            return glob.glob(A)
+    
+    def ensureDirectoryExistence(self):
+        try:
+            os.makedirs(self.getPath(), exist_ok=True)
+        except:
+            return False
+        return True
+
     
     def printFilesInPositionByExtension(self,ext=None,sort=True):
 
