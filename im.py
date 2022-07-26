@@ -969,6 +969,7 @@ class Imaginable():
         return thetransform
         
 
+
     def rotateImage3D(self, theta_x, theta_y, theta_z,transformation_center=None, output_spacing = None, background_value=0.0):
         """
         This function rotates an image across each of the x, y, z axes by theta_x, theta_y, and theta_z degrees
@@ -1473,7 +1474,7 @@ class ROIable():
     
     def getAllMetrics(self):
         O={
-            "Hahusorf":self.getHahusdorf(),
+            "Hahusdorf":self.getHahusdorf(),
             "FNE":self.getFalseNegativeError(),
             "FPE":self.getFalsePostiveError(),
             "Dice":self.getDice(),
